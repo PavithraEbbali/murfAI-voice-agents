@@ -1,416 +1,149 @@
 import logging
-
 import os
-
 import json
-
-import datetime
-
 from datetime import datetime
 
-
-
-# test
-
 from dotenv import load_dotenv
-
 from livekit.agents import (
-
     Agent,
-
     AgentSession,
-
     JobContext,
-
     JobProcess,
-
     MetricsCollectedEvent,
-
     RoomInputOptions,
-
     WorkerOptions,
-
     cli,
-
     metrics,
-
     tokenize,
-
     function_tool,
-
     RunContext,
-
 )
-
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
-
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-
-
 logger = logging.getLogger("agent")
-
-
-
 load_dotenv(".env.local")
 
+# --- 1. Helper Functions for Memory (JSON) ---
+LOG_FILE = "wellness_log.json"
 
+def load_last_entry():
+    """Reads the last check-in to give context."""
+    if not os.path.exists(LOG_FILE):
+        return None
+    try:
+        with open(LOG_FILE, "r") as f:
+            data = json.load(f)
+            return data[-1] if data and isinstance(data, list) else None
+    except Exception:
+        return None
 
+def append_entry(entry_data):
+    """Saves the new check-in to the file."""
+    history = []
+    if os.path.exists(LOG_FILE):
+        try:
+            with open(LOG_FILE, "r") as f:
+                history = json.load(f)
+        except:
+            history = []
+    
+    history.append(entry_data)
+    with open(LOG_FILE, "w") as f:
+        json.dump(history, f, indent=2)
 
-
+# --- 2. The Wellness Agent Class ---
 class Assistant(Agent):
-
-    def __init__(self) -> None:
-
+    def __init__(self, history_context: str) -> None:
+        # We inject the history into the system prompt here
         super().__init__(
-
-            instructions="""You are a friendly Starbucks barista. The user will place a drink order by speaking.
-
-            Your job is to ask concise clarifying questions until the following order state is fully filled:
-
-            {
-
-              "drinkType": "string",
-
-              "size": "string",
-
-              "milk": "string",
-
-              "extras": ["string"],
-
-              "name": "string"
-
-            }
-
-            Ask one clear question at a time to obtain missing fields. Confirm the full order once complete, then save the order to disk and tell the user it was saved.
-
-            Keep a friendly, helpful tone and avoid complex formatting.""",
-
+            instructions=f"""
+            You are 'Aura', a supportive health & wellness companion.
+            
+            YOUR GOAL: Conduct a short daily check-in with the user.
+            
+            CONTEXT FROM PAST:
+            {history_context}
+            
+            STEPS:
+            1. **Check-in**: Ask how they are feeling mentally/physically. (Reference the past if available).
+            2. **Intentions**: Ask for 1-3 small, realistic goals for today.
+            3. **Advice**: Offer ONE piece of simple, grounded advice (e.g., "Drink water", "Take a walk").
+            4. **Recap & Save**: Summarize their mood and goals. THEN, call the 'log_checkin' tool to save it.
+            
+            TONE: Warm, calm, and supportive. Do NOT give medical advice.
+            """,
         )
 
-
-
-        # Initialize a small order state that we will fill via tools
-
-        self.order_state = {
-
-            "drinkType": "",
-
-            "size": "",
-
-            "milk": "",
-
-            "extras": [],
-
-            "name": "",
-
+    @function_tool
+    async def log_checkin(self, context: RunContext, mood: str, intentions: str, summary: str):
+        """
+        Call this tool when the user confirms their details to save the session.
+        """
+        entry = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "mood": mood,
+            "intentions": intentions,
+            "summary": summary
         }
-
-
-
-    @function_tool
-
-    async def update_order(self, context: RunContext, field: str, value: str):
-
-        allowed = {"drinkType", "size", "milk", "extras", "name"}
-
-        if field not in allowed:
-
-            return f"Unknown field '{field}'. Allowed fields: {', '.join(sorted(allowed))}."
-
-
-
-        if field == "extras":
-
-            extras = [e.strip() for e in value.split(",") if e.strip()]
-
-            if extras:
-
-                self.order_state["extras"].extend(extras)
-
-        else:
-
-            self.order_state[field] = value.strip()
-
-
-
-        # Function to return the next missing field
-
-        def next_missing_field():
-
-            if not self.order_state["drinkType"]:
-
-                return "drinkType"
-
-            if not self.order_state["size"]:
-
-                return "size"
-
-            if not self.order_state["milk"]:
-
-                return "milk"
-
-            if self.order_state["extras"] == []:
-
-                return "extras"
-
-            if not self.order_state["name"]:
-
-                return "name"
-
-            return None
-
-
-
-        missing = next_missing_field()
-
-
-
-        # Ask appropriate next question
-
-        if missing:
-
-            if missing == "drinkType":
-
-                return "What drink would you like today?"
-
-            if missing == "size":
-
-                return "Sounds great. What size do you prefer? Small, medium, or large?"
-
-            if missing == "milk":
-
-                return "Got it. What type of milk would you like? Whole, almond, soy, oat?"
-
-            if missing == "extras":
-
-                return "Would you like any extras? For example, whipped cream, caramel, chocolate, or none?"
-
-            if missing == "name":
-
-                return "Perfect! And may I have your name for the order?"
-
-
-
-        # If nothing missing → save JSON file
-
-        
-
-        orders_dir = os.path.join(os.getcwd(), "orders", "orderList")
-
-        os.makedirs(orders_dir, exist_ok=True)
-
-
-
-
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        filename = os.path.join(orders_dir, f"order_{timestamp}.json")
-
-
-
-        with open(filename, "w", encoding="utf-8") as f:
-
-            json.dump(self.order_state, f, ensure_ascii=False, indent=2)
-
-
-
-        return f"Your order is complete and has been saved! Preparing your coffee now."
-
-
-
-
-
-    @function_tool
-
-    async def get_order(self, context: RunContext):
-
-        """Return the current order state as JSON-serializable dict."""
-
-        return self.order_state
-
-
-
-
+        append_entry(entry)
+        return "I've saved your wellness log for today. Have a wonderful day!"
 
 def prewarm(proc: JobProcess):
-
     proc.userdata["vad"] = silero.VAD.load()
 
-
-
-
-
 async def entrypoint(ctx: JobContext):
+    ctx.log_context_fields = {"room": ctx.room.name}
 
-    # Logging setup
+    # --- 3. Load Memory BEFORE starting the agent ---
+    last_session = load_last_entry()
+    history_text = "This is your first meeting."
+    start_message = "Hello! I'm Willow, your wellness companion. How are you feeling today?"
 
-    # Add any other context you want in all log entries here
-
-    ctx.log_context_fields = {
-
-        "room": ctx.room.name,
-
-    }
-
-
-
-    # Set up a voice AI pipeline using OpenAI, Cartesia, AssemblyAI, and the LiveKit turn detector
+    if last_session:
+        history_text = f"Last time ({last_session['timestamp']}), you felt: {last_session['mood']}. Your goal was: {last_session['intentions']}."
+        start_message = f"Welcome back! Last time you mentioned you were {last_session['mood']}. How are you feeling today?"
 
     session = AgentSession(
-
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-
-        # See all available models at https://docs.livekit.io/agents/models/stt/
-
         stt=deepgram.STT(model="nova-3"),
-
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-
-        # See all available models at https://docs.livekit.io/agents/models/llm/
-
-        llm=google.LLM(
-
-                model="gemini-2.5-flash",
-
-            ),
-
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
-
+        llm=google.LLM(model="gemini-2.5-flash"),
+        
+        # --- 4. CRITICAL UPDATE: Use Murf Falcon ---
         tts=murf.TTS(
-
-                voice="en-US-matthew", 
-
-                style="Conversation",
-
-                tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
-
-                text_pacing=True
-
-            ),
-
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-
-        # See more at https://docs.livekit.io/agents/build/turns
-
+            model="en-US-falcon",  # REQUIRED for the challenge
+            # voice="en-US-matthew" -> We removed this because Falcon uses 'model'
+        ),
+        
         turn_detection=MultilingualModel(),
-
         vad=ctx.proc.userdata["vad"],
-
-        # allow the LLM to generate a response while waiting for the end of turn
-
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
-
         preemptive_generation=True,
-
     )
-
-
-
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-
-    # 1. Install livekit-agents[openai]
-
-    # 2. Set OPENAI_API_KEY in .env.local
-
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-
-    # 4. Use the following session setup instead of the version above
-
-    # session = AgentSession(
-
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-
-    # )
-
-
-
-    # Metrics collection, to measure pipeline performance
-
-    # For more information, see https://docs.livekit.io/agents/build/metrics/
 
     usage_collector = metrics.UsageCollector()
 
-
-
     @session.on("metrics_collected")
-
     def _on_metrics_collected(ev: MetricsCollectedEvent):
-
         metrics.log_metrics(ev.metrics)
-
         usage_collector.collect(ev.metrics)
 
-
-
     async def log_usage():
-
-        summary = usage_collector.get_summary()
-
-        logger.info(f"Usage: {summary}")
-
-
+        logger.info(f"Usage: {usage_collector.get_summary()}")
 
     ctx.add_shutdown_callback(log_usage)
 
-
-
-    # # Add a virtual avatar to the session, if desired
-
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-
-    # avatar = hedra.AvatarSession(
-
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-
-    # )
-
-    # # Start the avatar and wait for it to join
-
-    # await avatar.start(session, room=ctx.room)
-
-
-
-    # Start the session, which initializes the voice pipeline and warms up the models
-
+    # Initialize Agent with the History Context
     await session.start(
-
-        agent=Assistant(),
-
+        agent=Assistant(history_context=history_text),
         room=ctx.room,
-
         room_input_options=RoomInputOptions(
-
-            # For telephony applications, use `BVCTelephony` for best results
-
             noise_cancellation=noise_cancellation.BVC(),
-
         ),
-
     )
-
-
-
-    # Join the room and connect to the user
 
     await ctx.connect()
 
-
-
-    # 👇 PASTE THE NEW LINE RIGHT HERE 👇
-
-    await session.say("Welcome to our cafe! What drink would you like today?", allow_interruptions=True)
-
-
+    # Agent speaks the dynamic start message
+    await session.say(start_message, allow_interruptions=True)
 
 if __name__ == "__main__":
-
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm))
-
-
-
