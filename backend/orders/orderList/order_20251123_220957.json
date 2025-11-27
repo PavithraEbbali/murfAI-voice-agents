@@ -1,0 +1,9 @@
+{
+  "drinkType": "cold coffee",
+  "size": "Large",
+  "milk": "Oat milk",
+  "extras": [
+    "Carmel"
+  ],
+  "name": "John"
+}

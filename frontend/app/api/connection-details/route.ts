@@ -13,12 +13,19 @@ type ConnectionDetails = {
 const API_KEY = process.env.LIVEKIT_API_KEY;
 const API_SECRET = process.env.LIVEKIT_API_SECRET;
 const LIVEKIT_URL = process.env.LIVEKIT_URL;
+<<<<<<< HEAD
 
+=======
+>>>>>>> 63103095ec4bcecf3e2d2ad74d1051a7efa801d6
 // don't cache the results
 export const revalidate = 0;
 
 export async function POST(req: Request) {
   try {
+<<<<<<< HEAD
+=======
+    console.log(API_KEY,API_SECRET,LIVEKIT_URL)
+>>>>>>> 63103095ec4bcecf3e2d2ad74d1051a7efa801d6
     if (LIVEKIT_URL === undefined) {
       throw new Error('LIVEKIT_URL is not defined');
     }
@@ -88,4 +95,8 @@ function createParticipantToken(
   }
 
   return at.toJwt();
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 63103095ec4bcecf3e2d2ad74d1051a7efa801d6

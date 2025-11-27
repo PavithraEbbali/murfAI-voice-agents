@@ -1,4 +1,5 @@
 [
+<<<<<<< HEAD
     {
         "timestamp": "2025-11-24T14:43:58.437217",
         "mood": "tired",
@@ -8,4 +9,30 @@
         ],
         "summary": "Take a short break to stretch or get water before studying to help with focus and energy."
     }
+=======
+  {
+    "timestamp": "2025-11-24 19:30:53",
+    "mood": "very low",
+    "intentions": "complete studying this model",
+    "summary": "The user is feeling very low and intends to complete studying this model today."
+  },
+  {
+    "timestamp": "2025-11-24 19:35:00",
+    "mood": "not feeling well",
+    "intentions": "none",
+    "summary": "User is not feeling well and has no specific intentions for today."
+  },
+  {
+    "timestamp": "2025-11-24 19:58:18",
+    "mood": "good",
+    "intentions": "practice mindfulness",
+    "summary": "User is feeling good and intends to practice mindfulness."
+  },
+  {
+    "timestamp": "2025-11-24 20:10:19",
+    "mood": "not feeling well",
+    "intentions": "practice mindfulness",
+    "summary": "User is not feeling well and intends to practice mindfulness."
+  }
+>>>>>>> 63103095ec4bcecf3e2d2ad74d1051a7efa801d6
 ]

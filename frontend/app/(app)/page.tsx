@@ -7,4 +7,8 @@ export default async function Page() {
   const appConfig = await getAppConfig(hdrs);
 
   return <App appConfig={appConfig} />;
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 63103095ec4bcecf3e2d2ad74d1051a7efa801d6
